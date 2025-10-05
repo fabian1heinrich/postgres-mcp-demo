@@ -1,0 +1,115 @@
+services:
+  ollama:
+    build:
+      dockerfile_inline: |
+        FROM ollama/ollama:latest
+        RUN apt update && apt install -y curl && rm -rf /var/lib/apt/lists/*
+    container_name: ollama
+    ports:
+      - 11434:11434
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 10s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
+  ollama-model-downloader:
+    image: curlimages/curl:latest
+    container_name: ollama-model-downloader
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      MODEL: ${MODEL:-granite3.3:2b}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        set -euo pipefail
+        echo 'Waiting for Ollama to be ready...'
+        sleep 5
+        echo "Downloading model: $${MODEL}"
+        curl --fail-with-body -sS -X POST "$${OLLAMA_HOST}/api/pull" \
+          -H 'Content-Type: application/json' \
+          -d "{\"model\":\"$${MODEL}\"}"
+    restart: "no"
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.6.31
+    container_name: open-webui
+    ports:
+      - 8080:8080
+    volumes:
+      - open-webui:/app/backend/data
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      WEBUI_AUTH: false
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-model-downloader:
+        condition: service_completed_successfully
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - ./hotel_data.sql:/docker-entrypoint-initdb.d/hotel_data.sql
+    environment:
+      - POSTGRES_PASSWORD=mcp-toolbox
+      - POSTGRES_USER=mcp-toolbox
+      - POSTGRES_DB=hotel_data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U mcp-toolbox -d hotel_data -h localhost"]
+      interval: 10s
+      timeout: 60s
+      retries: 5
+      start_period: 20s
+  mcp-toolbox-for-databases:
+    image: us-central1-docker.pkg.dev/database-toolbox/toolbox/toolbox:0.14.0
+    container_name: mcp-toolbox-for-databases
+    ports:
+      - 5001:5000
+    volumes:
+      - ./tools.yaml:/config/tools.yaml
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      [
+        "toolbox",
+        "--ui",
+        "--tools-file",
+        "/config/tools.yaml",
+        "--address",
+        "0.0.0.0",
+      ]
+  mcp-inspector:
+    image: ghcr.io/modelcontextprotocol/inspector:0.16.6
+    container_name: mcp-inspector
+    ports:
+      - 6274:6274
+      - 6277:6277
+    environment:
+      - HOST=0.0.0.0
+      - ALLOWED_ORIGINS=http://127.0.0.1:6274,http://127.0.0.1:6277
+    depends_on:
+      - mcp-toolbox-for-databases
+  mcpo:
+    image: ghcr.io/open-webui/mcpo:latest
+    container_name: mcpo
+    ports:
+      - 8000:8000
+    volumes:
+      - ./config.json:/app/config.json
+    depends_on:
+      - mcp-toolbox-for-databases
+    entrypoint: ["sh", "-c"]
+    command: ["sleep 10 && mcpo --config /app/config.json "]
+volumes:
+  open-webui:
+  ollama:

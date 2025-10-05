@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "mcp-toolbox-for-databases": {
+            "type": "streamable-http",
+            "url": "http://mcp-toolbox-for-databases:5000/mcp"
+        }
+    }
+}

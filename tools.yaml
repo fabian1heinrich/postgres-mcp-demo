@@ -1,0 +1,94 @@
+sources:
+  postgres:
+    kind: postgres
+    host: postgres
+    port: 5432
+    database: hotel_data
+    user: mcp-toolbox
+    password: mcp-toolbox
+tools:
+  search-hotels-by-name:
+    kind: postgres-sql
+    source: postgres
+    description: Search for hotels based on name.
+    parameters:
+      - name: name
+        type: string
+        description: The name of the hotel.
+    statement: SELECT * FROM hotels WHERE name ILIKE '%' || $1 || '%';
+  search-hotels-by-price-range:
+    kind: postgres-sql
+    source: postgres
+    description: Find hotels within a nightly price range (inclusive).
+    parameters:
+      - name: min_price
+        type: string
+        description: The minimum nightly price in USD.
+      - name: max_price
+        type: string
+        description: The maximum nightly price in USD.
+    statement: |
+      SELECT *
+      FROM hotels
+      WHERE price_per_night BETWEEN $1::numeric AND $2::numeric
+      ORDER BY price_per_night;
+  list-hotels-by-star-rating:
+    kind: postgres-sql
+    source: postgres
+    description: List hotels that match a specific star rating.
+    parameters:
+      - name: star_rating
+        type: integer
+        description: Desired star rating from 1 to 5.
+    statement: |
+      SELECT *
+      FROM hotels
+      WHERE star_rating = $1
+      ORDER BY price_per_night;
+  list-hotels-by-city:
+    kind: postgres-sql
+    source: postgres
+    description: Retrieve hotels in a given city (case-insensitive).
+    parameters:
+      - name: city
+        type: string
+        description: City name to filter by.
+    statement: |
+      SELECT *
+      FROM hotels
+      WHERE LOWER(city) = LOWER($1)
+      ORDER BY price_per_night;
+  find-hotels-by-amenity:
+    kind: postgres-sql
+    source: postgres
+    description: Find hotels that include a particular amenity.
+    parameters:
+      - name: amenity
+        type: string
+        description: Amenity to match exactly (e.g., Spa, Pool, WiFi).
+    statement: |
+      SELECT *
+      FROM hotels
+      WHERE amenities @> ARRAY[$1::text]::text[]
+      ORDER BY price_per_night;
+  top-cheapest-hotels:
+    kind: postgres-sql
+    source: postgres
+    description: Return the N cheapest hotels overall.
+    parameters:
+      - name: limit
+        type: integer
+        description: Maximum number of hotels to return.
+    statement: |
+      SELECT *
+      FROM hotels
+      ORDER BY price_per_night
+      LIMIT $1;
+toolsets:
+  default-toolset:
+    - search-hotels-by-name
+    - search-hotels-by-price-range
+    - list-hotels-by-star-rating
+    - list-hotels-by-city
+    - find-hotels-by-amenity
+    - top-cheapest-hotels
